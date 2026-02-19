@@ -24,8 +24,6 @@ CHANNEL_ID = config["channel_id"]
 ADMIN_IDS = config["admin_ids"]
 CATEGORIES = config["categories"]
 
-NEXT_ADMIN_INDEX = 0
-
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 logging.basicConfig(level=logging.INFO)
@@ -181,8 +179,6 @@ async def admin_cancel(callback: types.CallbackQuery, state: FSMContext):
 # --- ВЕТКА ЮЗЕРА (Предложка с Round-Robin) ---
 @dp.callback_query(StateFilter(PostState.confirm_submission), F.data == "user_send_yes")
 async def user_submit(callback: types.CallbackQuery, state: FSMContext):
-    global NEXT_ADMIN_INDEX
-
     data = await state.get_data()
     content = data['content']
     final_caption = data['final_caption']
@@ -199,36 +195,21 @@ async def user_submit(callback: types.CallbackQuery, state: FSMContext):
     )
     kb = get_moderation_kb(user_id)
 
-    # 3. Round-Robin распределение (ищем живого админа)
-    sent_success = False
-    attempts = 0
-    total_admins = len(ADMIN_IDS)
-
-    while not sent_success and attempts < total_admins:
-        target_admin_id = ADMIN_IDS[NEXT_ADMIN_INDEX]
-
+    for admin_id in ADMIN_IDS:
         try:
-            await bot.send_message(target_admin_id, admin_text, parse_mode="HTML")
+            await bot.send_message(admin_id, admin_text, parse_mode="HTML")
 
             if content['type'] == 'photo':
-                await bot.send_photo(target_admin_id, content['file_id'], caption=final_caption, reply_markup=kb)
+                await bot.send_photo(admin_id, content['file_id'], caption=final_caption, reply_markup=kb)
             elif content['type'] == 'document':
-                await bot.send_document(target_admin_id, content['file_id'], caption=final_caption, reply_markup=kb)
+                await bot.send_document(admin_id, content['file_id'], caption=final_caption, reply_markup=kb)
             elif content['type'] == 'video':
-                await bot.send_video(target_admin_id, content['file_id'], caption=final_caption, reply_markup=kb)
+                await bot.send_video(admin_id, content['file_id'], caption=final_caption, reply_markup=kb)
             elif content['type'] == 'text':
-                await bot.send_message(target_admin_id, text=final_caption, reply_markup=kb)
-
-            sent_success = True
+                await bot.send_message(admin_id, text=final_caption, reply_markup=kb)
 
         except Exception as e:
-            print(f"⚠️ Не смог отправить админу {target_admin_id}: {e}. Пробую следующего...")
-
-        NEXT_ADMIN_INDEX = (NEXT_ADMIN_INDEX + 1) % total_admins
-        attempts += 1
-
-    if not sent_success:
-        await callback.message.answer("⚠️ Ошибка: Все админы недоступны.")
+            print(f"⚠️ Не смог отправить предложку админу {admin_id}: {e}")
 
     await callback.answer()
 
